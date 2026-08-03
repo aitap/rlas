@@ -1,0 +1,98 @@
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - master
+
+jobs:
+  foo:
+    runs-on: macos-26
+    steps:
+    - uses: actions/checkout@v7
+    - run: |
+        sudo xcode-select --switch /Applications/Xcode_26.6.app
+        clang --version
+        wget --no-verbose -c https://mac.r-project.org/tools/gfortran-14.2-universal.pkg
+        sudo installer -package gfortran-14.2-universal.pkg -target /
+
+    - id: cache4
+      uses: actions/cache/restore@v5
+      with:
+        path: ./*.tar.?z
+        key: ${{ runner.os }}-R-src
+    - if: steps.cache4.outputs.cache-hit != 'true'
+      run: |
+        wget --no-verbose -c \
+          https://stat.ethz.ch/R/daily/R-patched_2026-08-02.tar.xz \
+          https://cran.r-project.org/src/contrib/Archive/rlas/rlas_1.9.3.tar.gz
+    - if: steps.cache4.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ./*.tar.?z
+        key: ${{ runner.os }}-R-src
+
+    - id: cache3
+      uses: actions/cache/restore@v5
+      with:
+        path: macbin
+        key: ${{ runner.os }}-R-opt
+
+    - if: steps.cache3.outputs.cache-hit != 'true'
+      run: |
+        # how do you install R without installing R?
+        export baseURL=https://mac.r-project.org/bin/darwin23/arm64/
+        mkdir macbin; cd macbin
+        wget --no-verbose -c $baseURL/PACKAGES
+        perl -nE '
+          if (/^(\w+):\s*(.*)$/) {
+            $current{$1} = $2
+          } else {
+            push @entries, { %current };
+            %current=();
+          }
+          }{
+          $entries{$_->{Bundle} // $_->{Package}} = $_
+            for map {
+              for my $p (split /,\s*/, $_->{Depends}) {
+                undef $_->{depends}{$p =~ s/ .*//r}
+              }
+              $_
+            } @entries;
+          (sub($p){
+            for my $d (keys %{$entries{$p}{depends}}) {
+              undef $inst{$d};
+              __SUB__->($d)
+            }
+          })->("r-base-dev");
+          say "$ENV{baseURL}/$entries{$_}{Binary}" for keys %inst
+        ' PACKAGES | wget --no-verbose -i - -c
+
+    - if: steps.cache3.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: macbin
+        key: ${{ runner.os }}-R-opt
+
+    - run: |
+        for f in macbin/*.tar.xz; do sudo tar -C / -xf "$f"; done
+
+    - id: cache
+      uses: actions/cache/restore@v5
+      with:
+        path: R-build
+        key: ${{ runner.os }}-R
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+       tar -xJf R-devel_2026-08-02.tar.xz
+       mkdir R-build
+       cd R-build
+       cp ../config.site .
+       . ../env
+       ../R-devel/configure --with-x=no && make -j3
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: R-build
+        key: ${{ runner.os }}-R

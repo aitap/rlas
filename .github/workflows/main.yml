@@ -58,12 +58,17 @@ jobs:
               }
               $_
             } @entries;
-          (sub($p){
-            for my $d (keys %{$entries{$p}{depends}}) {
-              undef $inst{$d};
-              __SUB__->($d)
+          sub inst(@p) {
+            for my $p (@p) {
+              undef $inst{$p};
+              for my $d (keys %{$entries{$p}{depends}}) {
+                undef $inst{$d};
+                __SUB__->($d)
+              }
             }
-          })->("r-base-dev");
+          };
+          inst(keys %{$entries{"r-base-dev"}{$p}});
+          inst("gdal", "geos", "proj", "sqlite3");
           say "$ENV{baseURL}/$entries{$_}{Binary}" for keys %inst
         ' PACKAGES | wget --no-verbose -i - -c
 
@@ -96,3 +101,38 @@ jobs:
       with:
         path: R-build
         key: ${{ runner.os }}-R
+
+    - id: cache2
+      uses: actions/cache/restore@v5
+      with:
+        path: rlas.deps
+        key: ${{ runner.os }}-R-deps
+    - if: steps.cache2.outputs.cache-hit != 'true'
+      run: |
+       . ./env
+       export R_LIBS_USER=rlas.deps MAKEFLAGS=-j3
+       mkdir -p $R_LIBS_USER
+       R-build/bin/Rscript -e '
+         untar(Sys.glob("rlas_*.tar.gz"))
+         tools:::.read_description("rlas/DESCRIPTION") |>
+           tools:::.split_description() |>
+           _[c("Depends","Suggests","Imports","LinkingTo")] |>
+           lapply(names) |> unlist(use.names=FALSE) |>
+           unique() -> d
+         install.packages(d[d %notin% rownames(installed.packages())])
+       '
+    - if: steps.cache2.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: rlas.deps
+        key: ${{ runner.os }}-R-deps
+
+    - run: |
+       . ./env
+       export R_LIBS_USER=rlas.deps MAKEFLAGS=-j3
+       R-build/bin/R CMD check --no-manual --install-args=--dsym rlas_*.tar.gz
+
+    - uses: actions/upload-artifact@v7
+      with:
+        path: rlas.Rcheck
+      if: always()

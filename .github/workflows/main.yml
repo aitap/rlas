@@ -130,6 +130,8 @@ jobs:
     - run: |
        . ./env
        export R_LIBS_USER=rlas.deps MAKEFLAGS=-j3
+       mkdir -p ~/.R
+       echo 'CXX17FLAGS = -g -Og -Wall' > ~/.R/Makevars
        R-build/bin/R CMD check --no-manual --install-args=--dsym rlas_*.tar.gz
        find /Applications/Xcode_26.6.app -name '*libclang_rt.asan_osx_dynamic.dylib*' -exec cp {} rlas.Rcheck \;
 

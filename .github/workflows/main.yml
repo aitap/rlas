@@ -130,6 +130,8 @@ jobs:
     - run: |
        . ./env
        export R_LIBS_USER=rlas.deps MAKEFLAGS=-j3
+       mkdir -p ~/.R
+       echo 'CXX17FLAGS = -g -O3 -Wall -pedantic -Wconversion -Wno-sign-conversion' > ~/.R/Makevars
        R-build/bin/R CMD check --no-manual --install-args=--dsym rlas_*.tar.gz
 
     - uses: actions/upload-artifact@v7
